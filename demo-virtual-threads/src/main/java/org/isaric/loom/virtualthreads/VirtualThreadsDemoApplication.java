@@ -31,15 +31,17 @@ public final class VirtualThreadsDemoApplication {
 
     public static void main(String[] args) throws IOException {
         HttpServer server = HttpServer.create(new InetSocketAddress(PORT), 0);
+        ExecutorService serverExecutor = Executors.newCachedThreadPool();
         server.createContext("/health", exchange -> writeResponse(exchange, 200, "{\"status\":\"ok\"}"));
         server.createContext("/baseline/report", exchange -> handle(exchange, Mode.BASELINE));
         server.createContext("/virtual/report", exchange -> handle(exchange, Mode.VIRTUAL));
         server.createContext("/structured/report", exchange -> handle(exchange, Mode.STRUCTURED));
-        server.setExecutor(Executors.newCachedThreadPool());
+        server.setExecutor(serverExecutor);
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             BASELINE_EXECUTOR.shutdown();
             VIRTUAL_EXECUTOR.shutdown();
             server.stop(0);
+            serverExecutor.shutdown();
         }));
         System.out.println("Virtual threads demo listening on http://localhost:" + PORT);
         System.out.println("Try /baseline/report, /virtual/report, and /structured/report");
@@ -102,7 +104,27 @@ public final class VirtualThreadsDemoApplication {
     }
 
     private static String escape(String value) {
-        return value.replace("\\", "\\\\").replace("\"", "\\\"");
+        StringBuilder builder = new StringBuilder(value.length() + 16);
+        for (int index = 0; index < value.length(); index++) {
+            char current = value.charAt(index);
+            switch (current) {
+                case '\\' -> builder.append("\\\\");
+                case '"' -> builder.append("\\\"");
+                case '\b' -> builder.append("\\b");
+                case '\f' -> builder.append("\\f");
+                case '\n' -> builder.append("\\n");
+                case '\r' -> builder.append("\\r");
+                case '\t' -> builder.append("\\t");
+                default -> {
+                    if (current < 0x20) {
+                        builder.append(String.format("\\u%04x", (int) current));
+                    } else {
+                        builder.append(current);
+                    }
+                }
+            }
+        }
+        return builder.toString();
     }
 
     private static String threadLabel() {
