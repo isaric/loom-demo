@@ -1,0 +1,4 @@
+scenario,concurrency,avg_latency_ms,p95_latency_ms,throughput_rps,note
+baseline,20,430,480,43,Fixed pool queues once request concurrency grows
+virtual,20,418,450,48,Virtual threads keep imperative flow while reducing queueing
+structured,20,190,230,93,Fan-out runs in parallel; downstream latency still sets the floor
