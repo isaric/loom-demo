@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Project Loom Demos</title>
+<style>
+  body { font-family: 'Inter', sans-serif; background: #0f172a; color: #f1f5f9; margin: 0; padding: 20px; }
+  h1 { text-align: center; color: #38bdf8; }
+  .tabs { display: flex; gap: 10px; margin-bottom: 20px; justify-content: center; }
+  .tab-btn { background: #334155; color: #cbd5e1; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: bold; transition: all 0.2s; }
+  .tab-btn.active { background: #0ea5e9; color: white; }
+  .tab-btn:hover:not(.active) { background: #475569; }
+  .tab-content { display: none; animation: fadeIn 0.3s; }
+  .tab-content.active { display: block; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .card { background: #1e293b; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); max-width: 1000px; margin: 0 auto; }
+  button { background: #0ea5e9; color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; font-size: 16px; margin-bottom: 15px; }
+  button:hover { background: #0284c7; }
+  pre { background: #000; padding: 15px; border-radius: 5px; overflow-y: auto; height: 350px; color: #a5b4fc; font-family: monospace; white-space: pre-wrap; }
+  .dot { position: absolute; top: 0; width: 8px; height: 8px; border-radius: 50%; margin-top: -2px; }
+  .dot-ingress { background: #eab308; animation: moveRight 0.4s linear forwards; }
+  .dot-egress { background: #22c55e; animation: moveRight 0.4s linear forwards; }
+  @keyframes moveRight { 0% { left: 0%; opacity: 1; } 100% { left: 100%; opacity: 0; } }
+</style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <h1>Project Loom Demos</h1>
+  <div class="tabs">
+    <button class="tab-btn active" onclick="showTab('demo1', this)">Demo 1: Virtual Threads</button>
+    <button class="tab-btn" onclick="showTab('demo2', this)">Demo 2: Hybrid Reactive</button>
+  </div>
+
+  <div id="demo1" class="tab-content active">
+    <div class="card">
+      <h2>Demo 1: Virtual Threads (HTTP)</h2>
+      <div style="background: #334155; padding: 15px; border-radius: 8px; margin-bottom: 15px; font-size: 14px; line-height: 1.5;">
+        <p style="margin-top: 0; margin-bottom: 10px;"><strong>Baseline:</strong> A standard endpoint using a fixed thread pool. Under load, requests queue up waiting for threads.</p>
+        <p style="margin-top: 0; margin-bottom: 10px;"><strong>Virtual:</strong> Uses <code>Executors.newVirtualThreadPerTaskExecutor()</code> to assign a cheap virtual thread to every request, improving throughput dramatically without changing the blocking code style.</p>
+        <p style="margin-top: 0; margin-bottom: 0;"><strong>Structured:</strong> Uses <code>StructuredTaskScope</code> to fan out downstream blocking calls concurrently within the request scope, improving latency and providing robust cancellation/failure handling.</p>
+      </div>
+      <div>
+        <button onclick="fetchDemo1('baseline')">Run Baseline</button>
+        <button onclick="fetchDemo1('virtual')">Run Virtual</button>
+        <button onclick="fetchDemo1('structured')">Run Structured</button>
+      </div>
+      <div>
+        <button onclick="runBenchmark('baseline')" style="background: #eab308;">Bench Baseline</button>
+        <button onclick="runBenchmark('virtual')" style="background: #eab308;">Bench Virtual</button>
+        <button onclick="runBenchmark('structured')" style="background: #eab308;">Bench Structured</button>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
+        <div><canvas id="throughputChart" height="200"></canvas></div>
+        <div><canvas id="latencyChart" height="200"></canvas></div>
+      </div>
+      <pre id="demo1-out"></pre>
+    </div>
+  </div>
+
+  <div id="demo2" class="tab-content">
+    <div class="card">
+      <h2>Demo 2: Hybrid Reactive (Console)</h2>
+      <div style="background: #334155; padding: 15px; border-radius: 8px; margin-bottom: 15px; font-size: 14px; line-height: 1.5;">
+        <p style="margin-top: 0; margin-bottom: 10px;">This demo simulates a <strong>Hybrid Architecture</strong>. The ingress pipeline uses <strong>Reactive Streams</strong> to apply explicit backpressure, ensuring no more than 3 items are "in-flight" at a time to prevent resource exhaustion.</p>
+        <p style="margin-top: 0; margin-bottom: 0;">Once accepted by the reactive edge, the actual business logic is handed off to a <strong>Virtual Thread worker</strong>. This allows the system to remain responsive and backpressure-aware at the edge, while keeping the core business logic simple and blocking.</p>
+      </div>
+      <button onclick="fetchDemo2()">Run Hybrid Demo</button>
+      
+      <div style="display: flex; justify-content: space-between; align-items: center; background: #334155; padding: 20px; border-radius: 8px; margin-bottom: 15px;">
+        <div style="text-align: center;">
+           <div style="font-size: 30px;">🌊</div>
+           <div style="color: #cbd5e1; font-size: 12px; margin-top: 5px;">Stream</div>
+        </div>
+        
+        <div class="flow-path" id="anim-ingress" style="flex: 1; height: 4px; background: #1e293b; margin: 0 15px; position: relative; border-radius: 2px;">
+        </div>
+
+        <div style="text-align: center; border: 2px solid #eab308; padding: 10px; border-radius: 8px; background: #1e293b;">
+           <div style="font-size: 24px;">📥</div>
+           <div style="color: #eab308; font-size: 12px; margin-top: 5px; font-weight: bold;">Buffer (Max 3)</div>
+        </div>
+
+        <div class="flow-path" id="anim-egress" style="flex: 1; height: 4px; background: #1e293b; margin: 0 15px; position: relative; border-radius: 2px;">
+        </div>
+
+        <div style="text-align: center; border: 2px solid #22c55e; padding: 10px; border-radius: 8px; background: #1e293b;">
+           <div id="gear-icon" style="font-size: 24px; display: inline-block; transition: transform 0.2s;">⚙️</div>
+           <div style="color: #22c55e; font-size: 12px; margin-top: 5px; font-weight: bold;">Virtual Threads</div>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+        <div style="background: #334155; padding: 15px; border-radius: 8px;">
+          <h3 style="margin-top: 0; color: #eab308; font-size: 16px;">Reactive Edge (Backpressure)</h3>
+          <p style="margin: 5px 0;">In-Flight Items: <span id="demo2-inflight" style="font-weight: bold; font-size: 20px; color: #eab308;">0</span> / 3</p>
+          <div style="width: 100%; background: #1e293b; height: 12px; border-radius: 6px; overflow: hidden;">
+            <div id="demo2-inflight-bar" style="width: 0%; height: 100%; background: #eab308; transition: width 0.2s;"></div>
+          </div>
+        </div>
+        <div style="background: #334155; padding: 15px; border-radius: 8px;">
+          <h3 style="margin-top: 0; color: #22c55e; font-size: 16px;">Virtual Thread Workers</h3>
+          <p style="margin: 5px 0;">Processed Items: <span id="demo2-processed" style="font-weight: bold; font-size: 20px; color: #22c55e;">0</span> / 12</p>
+          <div style="width: 100%; background: #1e293b; height: 12px; border-radius: 6px; overflow: hidden;">
+            <div id="demo2-processed-bar" style="width: 0%; height: 100%; background: #22c55e; transition: width 0.2s;"></div>
+          </div>
+        </div>
+      </div>
+      
+      <pre id="demo2-out"></pre>
+    </div>
+  </div>
+
+  <script>
+    function showTab(tabId, btnElement) {
+      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById(tabId).classList.add('active');
+      btnElement.classList.add('active');
+    }
+
+    let throughputChart, latencyChart;
+    const chartData = {
+      labels: [],
+      throughput: [],
+      p50: [],
+      p95: [],
+      p99: []
+    };
+
+    function initCharts() {
+      Chart.defaults.color = '#f1f5f9';
+      Chart.defaults.borderColor = '#334155';
+      
+      const tCtx = document.getElementById('throughputChart').getContext('2d');
+      throughputChart = new Chart(tCtx, {
+        type: 'bar',
+        data: {
+          labels: chartData.labels,
+          datasets: [{
+            label: 'Throughput (req/s)',
+            data: chartData.throughput,
+            backgroundColor: '#0ea5e9',
+          }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+      });
+
+      const lCtx = document.getElementById('latencyChart').getContext('2d');
+      latencyChart = new Chart(lCtx, {
+        type: 'bar',
+        data: {
+          labels: chartData.labels,
+          datasets: [
+            { label: 'p50 (ms)', data: chartData.p50, backgroundColor: '#22c55e' },
+            { label: 'p95 (ms)', data: chartData.p95, backgroundColor: '#eab308' },
+            { label: 'p99 (ms)', data: chartData.p99, backgroundColor: '#ef4444' }
+          ]
+        },
+        options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+      });
+    }
+    window.addEventListener('load', initCharts);
+
+    async function runBenchmark(type) {
+      const out = document.getElementById('demo1-out');
+      out.textContent += `\n> Benchmarking ${type} (40 concurrency, 100 requests)...\n`;
+      try {
+        const res = await fetch(`/benchmark?type=${type}`);
+        const data = await res.json();
+        out.textContent += JSON.stringify(data, null, 2) + "\n";
+        
+        const labelIndex = chartData.labels.indexOf(type);
+        if (labelIndex === -1) {
+          chartData.labels.push(type);
+          chartData.throughput.push(data.throughput_req_sec);
+          chartData.p50.push(data.p50_ms);
+          chartData.p95.push(data.p95_ms);
+          chartData.p99.push(data.p99_ms);
+        } else {
+          chartData.throughput[labelIndex] = data.throughput_req_sec;
+          chartData.p50[labelIndex] = data.p50_ms;
+          chartData.p95[labelIndex] = data.p95_ms;
+          chartData.p99[labelIndex] = data.p99_ms;
+        }
+        throughputChart.update();
+        latencyChart.update();
+        
+      } catch(e) {
+        out.textContent += "Error: " + e.message + "\n";
+      }
+      out.scrollTop = out.scrollHeight;
+    }
+
+    async function fetchDemo1(type) {
+      const out = document.getElementById('demo1-out');
+      out.textContent += `\n> Requesting /${type}/report?id=42\n`;
+      try {
+        const res = await fetch(`/api/demo1/${type}/report?id=42`);
+        const text = await res.text();
+        out.textContent += text + "\n";
+      } catch(e) {
+        out.textContent += "Error: " + e.message + "\n";
+      }
+      out.scrollTop = out.scrollHeight;
+    }
+
+    async function fetchDemo2() {
+      const out = document.getElementById('demo2-out');
+      out.textContent += `\n> Running Demo 2 (mvn exec:java)\n`;
+      
+      let inFlight = 0;
+      let processed = 0;
+      document.getElementById('demo2-inflight').textContent = '0';
+      document.getElementById('demo2-inflight-bar').style.width = '0%';
+      document.getElementById('demo2-processed').textContent = '0';
+      document.getElementById('demo2-processed-bar').style.width = '0%';
+
+      let gearRotation = 0;
+      function spawnDot(containerId, className) {
+        const container = document.getElementById(containerId);
+        const dot = document.createElement('div');
+        dot.className = 'dot ' + className;
+        container.appendChild(dot);
+        setTimeout(() => dot.remove(), 400);
+      }
+
+      try {
+        const res = await fetch(`/run-demo2`);
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let buffer = '';
+        
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) {
+            if (buffer) out.textContent += buffer + '\n';
+            break;
+          }
+          
+          buffer += decoder.decode(value, {stream: true});
+          let lines = buffer.split('\n');
+          buffer = lines.pop(); // keep the incomplete line in the buffer
+          
+          for (const line of lines) {
+             out.textContent += line + '\n';
+             if (line.includes('in-flight=')) {
+                const match = line.match(/in-flight=(\d+)/);
+                if (match) {
+                   inFlight = parseInt(match[1]);
+                   document.getElementById('demo2-inflight').textContent = inFlight;
+                   document.getElementById('demo2-inflight-bar').style.width = (inFlight / 3 * 100) + '%';
+                   spawnDot('anim-ingress', 'dot-ingress');
+                }
+             }
+             if (line.includes('in-flight now=')) {
+                const match = line.match(/in-flight now=(\d+)/);
+                if (match) {
+                   inFlight = parseInt(match[1]);
+                   document.getElementById('demo2-inflight').textContent = inFlight;
+                   document.getElementById('demo2-inflight-bar').style.width = (inFlight / 3 * 100) + '%';
+                }
+             }
+             if (line.includes('emitted ProcessedEvent')) {
+                processed++;
+                document.getElementById('demo2-processed').textContent = processed;
+                document.getElementById('demo2-processed-bar').style.width = (processed / 12 * 100) + '%';
+                spawnDot('anim-egress', 'dot-egress');
+                gearRotation += 90;
+                document.getElementById('gear-icon').style.transform = `rotate(${gearRotation}deg)`;
+             }
+          }
+          out.scrollTop = out.scrollHeight;
+        }
+      } catch(e) {
+        out.textContent += "Error: " + e.message + "\n";
+      }
+    }
+  </script>
+</body>
+</html>
