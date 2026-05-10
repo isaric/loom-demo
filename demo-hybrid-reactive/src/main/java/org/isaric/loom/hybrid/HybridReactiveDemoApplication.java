@@ -36,7 +36,12 @@ public final class HybridReactiveDemoApplication {
     }
 
     private static void log(String stage, String message) {
-        System.out.printf("[%s] %-10s %s (%s)%n", Instant.now(), stage, message, Thread.currentThread().getName());
+        System.out.printf("[%s] %-10s %s (%s)%n", Instant.now(), stage, message, threadLabel());
+    }
+
+    private static String threadLabel() {
+        String name = Thread.currentThread().getName();
+        return name == null || name.isBlank() ? Thread.currentThread().toString() : name;
     }
 
     private record OrderEvent(int id, String customerId) {

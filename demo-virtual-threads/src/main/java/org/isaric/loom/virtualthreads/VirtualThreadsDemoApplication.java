@@ -10,12 +10,15 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CompletionService;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.StructuredTaskScope;
+import java.util.concurrent.Future;
 
 public final class VirtualThreadsDemoApplication {
     private static final int PORT = 8080;
@@ -102,6 +105,11 @@ public final class VirtualThreadsDemoApplication {
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
+    private static String threadLabel() {
+        String name = Thread.currentThread().getName();
+        return name == null || name.isBlank() ? Thread.currentThread().toString() : name;
+    }
+
     private enum Mode {
         BASELINE,
         VIRTUAL,
@@ -117,25 +125,55 @@ public final class VirtualThreadsDemoApplication {
         }
 
         ReportPayload buildStructured(String itemId) throws Exception {
-            try (var scope = new StructuredTaskScope.ShutdownOnFailure()) {
-                var customer = scope.fork(() -> simulateLatency("customer-service", itemId, 140));
-                var ledger = scope.fork(() -> simulateLatency("ledger-service", itemId, 160));
-                var inventory = scope.fork(() -> simulateLatency("inventory-db", itemId, 110));
-                scope.join().throwIfFailed();
+            try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+                CompletionService<DependencyResult> completionService = new ExecutorCompletionService<>(executor);
+                List<Future<DependencyResult>> futures = List.of(
+                        completionService.submit(() -> fetchDependency("customer", "customer-service", itemId, 140)),
+                        completionService.submit(() -> fetchDependency("ledger", "ledger-service", itemId, 160)),
+                        completionService.submit(() -> fetchDependency("inventory", "inventory-db", itemId, 110)));
+
+                Map<String, String> results = new LinkedHashMap<>();
+                try {
+                    for (int index = 0; index < futures.size(); index++) {
+                        DependencyResult result = completionService.take().get();
+                        results.put(result.name(), result.value());
+                    }
+                } catch (InterruptedException e) {
+                    cancelOutstanding(futures);
+                    Thread.currentThread().interrupt();
+                    throw e;
+                } catch (ExecutionException e) {
+                    cancelOutstanding(futures);
+                    throw e;
+                }
+
                 return new ReportPayload(
                         itemId,
-                        "structured-concurrency",
-                        customer.get(),
-                        ledger.get(),
-                        inventory.get(),
+                        "structured-fanout",
+                        results.get("customer"),
+                        results.get("ledger"),
+                        results.get("inventory"),
                         Thread.currentThread().toString());
+            }
+        }
+
+        private DependencyResult fetchDependency(String name, String dependency, String itemId, long millis) throws InterruptedException {
+            return new DependencyResult(name, simulateLatency(dependency, itemId, millis));
+        }
+
+        private void cancelOutstanding(List<Future<DependencyResult>> futures) {
+            for (Future<DependencyResult> future : futures) {
+                future.cancel(true);
             }
         }
 
         private String simulateLatency(String dependency, String itemId, long millis) throws InterruptedException {
             Thread.sleep(millis);
-            return dependency + "-result-for-" + itemId + "@" + Thread.currentThread().getName();
+            return dependency + "-result-for-" + itemId + "@" + VirtualThreadsDemoApplication.threadLabel();
         }
+    }
+
+    private record DependencyResult(String name, String value) {
     }
 
     private record ReportPayload(

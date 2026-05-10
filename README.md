@@ -4,7 +4,7 @@ This repository turns the recorded-talk package in [`Project Loom - Copilot Pack
 
 ## Prerequisites
 
-- JDK 25+
+- JDK 21+
 - Maven 3.9+
 
 ## Projects
@@ -17,14 +17,14 @@ This repository turns the recorded-talk package in [`Project Loom - Copilot Pack
 ## Build everything
 
 ```bash
-export JAVA_HOME=/usr/lib/jvm/java-25-openjdk-amd64
+export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
 mvn verify
 ```
 
 ## Run demo 1: virtual threads and structured concurrency
 
 ```bash
-export JAVA_HOME=/usr/lib/jvm/java-25-openjdk-amd64
+export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
 mvn -pl demo-virtual-threads exec:java
 ```
 
@@ -46,7 +46,7 @@ seq 1 20 | xargs -n1 -P20 -I{} curl -s 'http://localhost:8080/virtual/report?id=
 ## Run demo 2: hybrid reactive edge + virtual-thread workers
 
 ```bash
-export JAVA_HOME=/usr/lib/jvm/java-25-openjdk-amd64
+export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
 mvn -pl demo-hybrid-reactive exec:java
 ```
 
