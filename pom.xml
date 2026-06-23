@@ -14,6 +14,7 @@
   <modules>
     <module>demo-virtual-threads</module>
     <module>demo-hybrid-reactive</module>
+    <module>demo-reactive-benchmark</module>
   </modules>
 
   <properties>
