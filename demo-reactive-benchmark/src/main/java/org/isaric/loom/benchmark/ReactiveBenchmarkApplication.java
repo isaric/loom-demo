@@ -1,5 +1,6 @@
 package org.isaric.loom.benchmark;
 
+import jakarta.annotation.PreDestroy;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -54,6 +55,15 @@ public class ReactiveBenchmarkApplication {
         SpringApplication.run(ReactiveBenchmarkApplication.class, args);
     }
 
+    /** Dispose the schedulers and shut down the executors on context shutdown so threads don't leak. */
+    @PreDestroy
+    void shutdown() {
+        platformScheduler.dispose();
+        virtualScheduler.dispose();
+        platformPool.shutdown();
+        virtualExecutor.shutdown();
+    }
+
     @GetMapping("/health")
     Mono<Map<String, Object>> health() {
         return Mono.just(Map.of("status", "ok"));
@@ -99,7 +109,14 @@ public class ReactiveBenchmarkApplication {
     /** A blocking downstream call - the kind of code virtual threads let you keep writing. */
     private Mono<Dependency> blockingCall(String dependency, String id, long latencyMs) {
         return Mono.fromCallable(() -> {
-            Thread.sleep(latencyMs);
+            try {
+                Thread.sleep(latencyMs);
+            } catch (InterruptedException e) {
+                // Thread.sleep clears the interrupt flag when it throws; restore it before rethrowing
+                // so cancellation propagates consistently (matches demo-virtual-threads).
+                Thread.currentThread().interrupt();
+                throw e;
+            }
             return new Dependency(dependency + "-result-for-" + id, Thread.currentThread().toString());
         });
     }

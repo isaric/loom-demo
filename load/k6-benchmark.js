@@ -41,7 +41,9 @@ export const options = {
     },
   },
   thresholds: {
-    // Don't fail the run on these — they're here so the numbers print in the summary.
+    // Intentionally lenient bounds so a normal run stays green and the p95/p99 + failure
+    // rate get surfaced in the summary. Note: if a threshold IS breached, k6 marks the run
+    // failed (non-zero exit) — it just won't abort the scenario early.
     http_req_duration: ['p(95)<5000', 'p(99)<10000'],
     http_req_failed: ['rate<0.05'],
   },
