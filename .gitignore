@@ -1,13 +1,7 @@
-<<<<<<< HEAD
+target/
 videos/
 venv/
 record.py
-=======
-target/
-<<<<<<< HEAD
->>>>>>> f5c17a8 (Create runnable Loom demo projects from the talk package (#1))
-=======
-videos/*
-venv/*
-record.py
->>>>>>> e9d654b (gitignore)
+
+# Generated benchmark summaries (produced by load/k6-benchmark.js)
+benchmarks/*-summary.json
